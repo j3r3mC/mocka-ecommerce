@@ -1,4 +1,6 @@
-V1
+# Roadmap
+
+## MVP V1
 
 - Auth
 - Profiles
@@ -9,18 +11,18 @@ V1
 - Payments
 - Moderation
 
-V2
+## V2
 
 - Offers
 
-V3
+## V3
 
 - Bundles
 
-V4
+## V4
 
 - Messaging
 
-V5
+## V5
 
 - Auctions

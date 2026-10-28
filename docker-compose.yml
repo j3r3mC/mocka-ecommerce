@@ -1,4 +1,22 @@
 services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+
+    container_name: mocka-app
+
+    working_dir: /var/www
+
+    volumes:
+      - ./apps/api:/var/www
+
+    depends_on:
+      - postgres
+      - redis
+
+    tty: true
+
   postgres:
     image: postgres:17
     container_name: mocka-postgres

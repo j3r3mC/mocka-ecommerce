@@ -330,10 +330,110 @@ docs/
 
 ✅ Un utilisateur peut désormais s'inscrire via l'API.
 
-### À faire
+## Jour 3 - Finalisation du module d’authentification
 
-- Vérifier l'unicité de l'email
-- Vérifier le hash du mot de passe
-- Implémenter Login
-- Implémenter Logout
-- Implémenter Me
+### Objectif
+
+Finaliser le socle d’authentification de **Mocka-Ecommerce** en ajoutant :
+
+- la connexion utilisateur ;
+- la gestion des erreurs de connexion ;
+- la déconnexion sécurisée ;
+- la récupération de l’utilisateur courant ;
+- les tests fonctionnels associés.
+
+---
+
+## Choix d’authentification
+
+Le frontend de l’application sera développé avec Next.js et communiquera avec l’API Laravel.
+
+Pour le client web officiel, la stratégie retenue est l’authentification SPA de Sanctum :
+
+```text
+Next.js
+↓
+Cookie de session HttpOnly
+↓
+Laravel Sanctum
+↓
+Session Laravel
+```
+
+## Résultats de la journée
+
+Création d’un utilisateur
+✅ Refus d’un email déjà utilisé
+✅ Vérification du hachage du mot de passe
+✅ Connexion avec des identifiants valides
+✅ Refus d’un email inconnu
+✅ Refus d’un mauvais mot de passe
+✅ Validation des champs obligatoires
+✅ Maintien de l’état authentifié
+✅ Déconnexion d’un utilisateur connecté
+✅ Refus du Logout pour un visiteur
+✅ Récupération de l’utilisateur courant
+✅ Refus de Me pour un visiteur
+✅ Absence du mot de passe dans les réponses
+✅ Absence du remember_token dans les réponses
+✅ Absence de token personnel pour la session SPA
+
+## Résumé des tests automatisés
+
+La suite de tests du module Auth couvre les principaux parcours d’authentification et leurs cas d’échec.
+
+### Inscription
+
+Le fichier `RegisterUserTest.php` vérifie :
+
+- qu’un utilisateur peut créer un compte avec des données valides ;
+- que les informations sont enregistrées en base de données ;
+- qu’une même adresse email ne peut pas être utilisée deux fois ;
+- que le mot de passe n’est jamais stocké en clair ;
+- que le mot de passe enregistré correspond bien au mot de passe fourni après vérification du hash.
+
+### Connexion
+
+Le fichier `LoginUserTest.php` vérifie :
+
+- qu’un utilisateur peut se connecter avec des identifiants valides ;
+- que le bon utilisateur est associé à la session ;
+- que la réponse contient les informations de l’utilisateur connecté ;
+- qu’aucun token personnel Sanctum n’est créé pour l’authentification SPA ;
+- qu’un email inconnu renvoie une erreur `401 Unauthorized` ;
+- qu’un mot de passe incorrect renvoie une erreur `401 Unauthorized` ;
+- que le même message générique est utilisé pour les identifiants invalides ;
+- que l’email est obligatoire ;
+- que le mot de passe est obligatoire ;
+- qu’une tentative échouée laisse le client non authentifié.
+
+### Déconnexion
+
+Le fichier `LogoutUserTest.php` vérifie :
+
+- qu’un utilisateur authentifié peut se déconnecter ;
+- que l’API renvoie un statut `200 OK` ;
+- que le message de confirmation est correct ;
+- que l’utilisateur n’est plus authentifié après la déconnexion ;
+- qu’un visiteur ne peut pas appeler la route Logout ;
+- qu’un visiteur reçoit une erreur `401 Unauthorized`.
+
+### Utilisateur courant
+
+Le fichier `CurrentUserTest.php` vérifie :
+
+- qu’un utilisateur authentifié peut récupérer son identité ;
+- que les données retournées correspondent au bon utilisateur ;
+- que l’identifiant, le prénom, le nom, l’email et le téléphone sont présents ;
+- que le mot de passe n’est jamais exposé ;
+- que le `remember_token` n’est jamais exposé ;
+- qu’un visiteur ne peut pas accéder à l’endpoint `Me` ;
+- qu’un visiteur reçoit une erreur `401 Unauthorized`.
+
+### Fonctionnement de la base de test
+
+Les tests utilisent :
+
+```php
+use RefreshDatabase;
+```

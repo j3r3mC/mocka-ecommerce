@@ -55,4 +55,11 @@ class AuthController extends Controller
             'message' => 'Déconnexion réussie.',
         ]);
     }
+
+    public function me(Request $request): JsonResponse
+    {
+        return response()->json([
+            'user' => $request->user(),
+        ]);
+    }
 }

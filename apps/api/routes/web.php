@@ -16,3 +16,8 @@ Route::post('/api/auth/login', [
     AuthController::class,
     'login',
 ]);
+
+Route::middleware('auth:sanctum')->post(
+    '/api/auth/logout',
+    [AuthController::class, 'logout']
+);

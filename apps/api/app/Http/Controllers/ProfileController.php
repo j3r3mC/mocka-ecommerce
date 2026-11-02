@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\StoreProfileRequest;
 use App\Http\Resources\ProfileResource;
 use Illuminate\Http\JsonResponse;
@@ -28,20 +29,39 @@ class ProfileController extends Controller
 
     public function store(StoreProfileRequest $request): JsonResponse
 {
-    $user = $request->user();
+        $user = $request->user();
 
-    if ($user->profile()->exists()) {
+        if ($user->profile()->exists()) {
+            return response()->json([
+                'message' => 'Un profil existe déjà pour cet utilisateur.',
+            ], 409);
+        }
+
+        $profile = $user->profile()->create(
+            $request->validated()
+        );
+
         return response()->json([
-            'message' => 'Un profil existe déjà pour cet utilisateur.',
-        ], 409);
+            'profile' => new ProfileResource($profile),
+        ], 201);
     }
 
-    $profile = $user->profile()->create(
-        $request->validated()
-    );
+    public function update(UpdateProfileRequest $request): JsonResponse
+    {
+        $profile = $request->user()->profile;
 
-    return response()->json([
-        'profile' => new ProfileResource($profile),
-    ], 201);
-}
+        if ($profile === null) {
+            return response()->json([
+                'message' => 'Profil introuvable.',
+            ], 404);
+        }
+
+        $profile->update(
+            $request->validated()
+        );
+
+        return response()->json([
+            'profile' => new ProfileResource($profile->refresh()),
+        ]);
+    }
 }

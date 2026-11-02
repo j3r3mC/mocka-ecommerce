@@ -40,4 +40,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ProfileController::class,
         'store',
     ]);
+    Route::patch('/api/profile', [
+        ProfileController::class,
+        'update',
+    ]);
 });

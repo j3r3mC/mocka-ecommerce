@@ -1,6 +1,9 @@
 <?php
 
+declare(strict_types=1);
+
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -17,12 +20,19 @@ Route::post('/api/auth/login', [
     'login',
 ]);
 
-Route::middleware('auth:sanctum')->post(
-    '/api/auth/logout',
-    [AuthController::class, 'logout']
-);
+Route::middleware('auth:sanctum')->group(function (): void {
+    Route::post('/api/auth/logout', [
+        AuthController::class,
+        'logout',
+    ]);
 
-Route::middleware('auth:sanctum')->get(
-    '/api/auth/me',
-    [AuthController::class, 'me']
-);
+    Route::get('/api/auth/me', [
+        AuthController::class,
+        'me',
+    ]);
+
+    Route::get('/api/profile', [
+        ProfileController::class,
+        'show',
+    ]);
+});

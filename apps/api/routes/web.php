@@ -35,4 +35,9 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ProfileController::class,
         'show',
     ]);
+
+    Route::post('/api/profile', [
+        ProfileController::class,
+        'store',
+    ]);
 });

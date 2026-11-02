@@ -44,4 +44,8 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ProfileController::class,
         'update',
     ]);
+    Route::post('/api/profile/avatar', [
+        ProfileController::class,
+        'uploadAvatar',
+    ]);
 });

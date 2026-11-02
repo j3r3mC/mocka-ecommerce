@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\UploadProfileAvatarRequest;
+use Illuminate\Support\Facades\Storage;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\StoreProfileRequest;
 use App\Http\Resources\ProfileResource;
@@ -64,4 +66,34 @@ class ProfileController extends Controller
             'profile' => new ProfileResource($profile->refresh()),
         ]);
     }
+
+    public function uploadAvatar(
+        UploadProfileAvatarRequest $request
+        ): JsonResponse {
+            $profile = $request->user()->profile;
+
+            if ($profile === null) {
+                return response()->json([
+                    'message' => 'Profil introuvable.',
+                ], 404);
+            }
+
+            $oldAvatarPath = $profile->avatar_path;
+
+            $newAvatarPath = $request
+                ->file('avatar')
+                ->store('avatars', 'public');
+
+            $profile->update([
+                'avatar_path' => $newAvatarPath,
+            ]);
+
+            if ($oldAvatarPath !== null) {
+                Storage::disk('public')->delete($oldAvatarPath);
+            }
+
+            return response()->json([
+                'profile' => new ProfileResource($profile->refresh()),
+            ]);
+        }
 }

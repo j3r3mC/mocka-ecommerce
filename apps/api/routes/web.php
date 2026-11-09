@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,6 +21,18 @@ Route::post('/api/auth/login', [
     'login',
 ]);
 
+// Route publique
+Route::get('/api/products', [
+    ProductController::class,
+    'index',
+]);
+
+Route::get('/api/products/{product}', [
+    ProductController::class,
+    'show',
+]);
+
+// Route protégée
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::post('/api/auth/logout', [
         AuthController::class,
@@ -40,12 +53,34 @@ Route::middleware('auth:sanctum')->group(function (): void {
         ProfileController::class,
         'store',
     ]);
+
     Route::patch('/api/profile', [
         ProfileController::class,
         'update',
     ]);
+
     Route::post('/api/profile/avatar', [
         ProfileController::class,
         'uploadAvatar',
+    ]);
+
+    Route::get('/api/my/products', [
+        ProductController::class,
+        'myProducts',
+    ]);
+
+    Route::post('/api/products', [
+        ProductController::class,
+        'store',
+    ]);
+
+    Route::patch('/api/products/{product}', [
+        ProductController::class,
+        'update',
+    ]);
+
+    Route::delete('/api/products/{product}', [
+        ProductController::class,
+        'destroy',
     ]);
 });

@@ -1339,3 +1339,616 @@ La journée se termine avec :
 ```
 
 Le projet dispose maintenant d’une base utilisateur complète et testée. Le prochain développement commencera par le modèle et la migration du module Produits.
+
+---
+
+## Jour 5 - CRUD du module Produits
+
+### Objectif
+
+Construire le socle du module Produits de **Mocka-Ecommerce** avant d’intégrer la gestion des images.
+
+Le périmètre retenu pour cette journée était le CRUD textuel complet :
+
+```text
+Créer un produit
+Consulter un produit
+Lister les produits publics
+Lister ses propres produits
+Modifier son produit
+Supprimer logiquement son produit
+```
+
+La gestion des images, la conversion WebP et le serveur média seront développés dans une étape séparée.
+
+---
+
+## Préparation Git
+
+Le développement du module a été isolé sur une branche dédiée :
+
+```text
+feature/module-produits
+```
+
+Cette branche a été créée depuis `develop` afin de préserver la stabilité du projet pendant le développement.
+
+Commande utilisée :
+
+```bash
+git switch -c feature/module-produits
+```
+
+Puis publication de la branche distante :
+
+```bash
+git push -u origin feature/module-produits
+```
+
+---
+
+## Architecture du produit
+
+Création du modèle et de sa migration :
+
+```bash
+php artisan make:model Product -m
+```
+
+Fichiers générés :
+
+```text
+app/Models/Product.php
+database/migrations/2026_11_09_131258_create_products_table.php
+```
+
+---
+
+## Structure de la table products
+
+La table `products` contient :
+
+```text
+products
+├── id
+├── user_id
+├── title
+├── description
+├── price_cents
+├── condition
+├── status
+├── city
+├── published_at
+├── created_at
+├── updated_at
+└── deleted_at
+```
+
+Migration mise en place :
+
+```php
+Schema::create('products', function (Blueprint $table): void {
+    $table->id();
+
+    $table
+        ->foreignId('user_id')
+        ->constrained()
+        ->cascadeOnDelete();
+
+    $table->string('title', 150);
+
+    $table->text('description');
+
+    $table->unsignedBigInteger('price_cents');
+
+    $table->string('condition', 20);
+
+    $table
+        ->string('status', 20)
+        ->default('draft');
+
+    $table->string('city', 100);
+
+    $table
+        ->timestamp('published_at')
+        ->nullable();
+
+    $table->timestamps();
+    $table->softDeletes();
+
+    $table->index([
+        'status',
+        'published_at',
+    ]);
+
+    $table->index([
+        'user_id',
+        'status',
+    ]);
+});
+```
+
+---
+
+## Décisions liées au prix
+
+Le prix est stocké en centimes :
+
+```text
+12,99 €  → 1299
+129,99 € → 12999
+```
+
+Champ utilisé :
+
+```php
+price_cents
+```
+
+Ce choix évite les erreurs de précision liées aux nombres décimaux lors des calculs monétaires.
+
+Les règles applicatives imposent également :
+
+```text
+price_cents doit être un entier
+price_cents doit être supérieur ou égal à 1
+```
+
+---
+
+## États physiques du produit
+
+Création de l’enum :
+
+```text
+app/Enums/ProductCondition.php
+```
+
+Valeurs disponibles :
+
+```php
+enum ProductCondition: string
+{
+    case New = 'new';
+    case LikeNew = 'like_new';
+    case Good = 'good';
+    case Fair = 'fair';
+}
+```
+
+Correspondance métier :
+
+```text
+new       → neuf
+like_new  → comme neuf
+good      → bon état
+fair      → état correct
+```
+
+---
+
+## Statuts de l’annonce
+
+Création de l’enum :
+
+```text
+app/Enums/ProductStatus.php
+```
+
+Valeurs disponibles :
+
+```php
+enum ProductStatus: string
+{
+    case Draft = 'draft';
+    case Published = 'published';
+    case Sold = 'sold';
+    case Archived = 'archived';
+}
+```
+
+Rôle des statuts :
+
+```text
+draft
+→ brouillon privé
+
+published
+→ annonce publique et disponible
+
+sold
+→ annonce vendue, mais toujours visible publiquement
+
+archived
+→ annonce retirée de la liste publique
+```
+
+Par défaut, un produit est créé avec :
+
+```text
+status = draft
+published_at = null
+```
+
+Le client ne peut donc pas publier directement une annonce lors de sa création.
+
+---
+
+## Date de publication
+
+Le champ :
+
+```php
+published_at
+```
+
+est distinct de :
+
+```php
+created_at
+```
+
+Cette séparation permet de distinguer :
+
+```text
+created_at
+→ date de création du brouillon
+
+published_at
+→ date réelle de publication de l’annonce
+```
+
+La liste publique utilise `published_at` pour trier les annonces.
+
+---
+
+## Modèle Product
+
+Création et configuration de :
+
+```text
+app/Models/Product.php
+```
+
+Champs autorisés en assignation de masse :
+
+```text
+user_id
+title
+description
+price_cents
+condition
+status
+city
+published_at
+```
+
+Casts configurés :
+
+```php
+protected function casts(): array
+{
+    return [
+        'price_cents' => 'integer',
+        'condition' => ProductCondition::class,
+        'status' => ProductStatus::class,
+        'published_at' => 'datetime',
+    ];
+}
+```
+
+Le modèle utilise également les suppressions logiques :
+
+```php
+use SoftDeletes;
+```
+
+---
+
+## Relations Eloquent
+
+Un utilisateur peut posséder plusieurs produits :
+
+```php
+public function products(): HasMany
+{
+    return $this->hasMany(Product::class);
+}
+```
+
+Un produit appartient à un utilisateur :
+
+```php
+public function user(): BelongsTo
+{
+    return $this->belongsTo(User::class);
+}
+```
+
+Relations disponibles :
+
+```php
+$user->products;
+$product->user;
+```
+
+---
+
+## Suppression logique
+
+La suppression d’un produit ne détruit pas immédiatement sa ligne en base.
+
+La migration ajoute :
+
+```php
+$table->softDeletes();
+```
+
+Cela crée :
+
+```text
+deleted_at
+```
+
+Avant suppression :
+
+```text
+deleted_at = null
+```
+
+Après suppression :
+
+```text
+deleted_at = date et heure de suppression
+```
+
+La ligne reste alors présente dans PostgreSQL, mais elle est automatiquement exclue des requêtes Eloquent ordinaires.
+
+Opérations disponibles :
+
+```php
+$product->delete();
+$product->restore();
+$product->forceDelete();
+$product->trashed();
+```
+
+Requêtes spécifiques :
+
+```php
+Product::withTrashed()->get();
+Product::onlyTrashed()->get();
+```
+
+Ce mécanisme fournit un filet de sécurité en cas de suppression accidentelle et prépare les futurs besoins de support, de modération et d’historique des commandes.
+
+---
+
+## Différence entre archivage et suppression
+
+Les statuts métier et la suppression logique ont des responsabilités différentes.
+
+### Produit archivé
+
+```text
+status = archived
+deleted_at = null
+```
+
+Le produit existe normalement. Il reste visible par son propriétaire, mais n’apparaît plus dans la liste publique.
+
+### Produit supprimé
+
+```text
+deleted_at != null
+```
+
+Le produit est considéré comme supprimé et n’apparaît plus dans les requêtes ordinaires, même pour son propriétaire.
+
+---
+
+## Tests du modèle Product
+
+Création de :
+
+```text
+tests/Feature/ProductModelTest.php
+```
+
+Scénarios couverts :
+
+- relation `User → Products` ;
+- relation `Product → User` ;
+- enregistrement du prix en centimes ;
+- cast de `ProductCondition` ;
+- cast de `ProductStatus` ;
+- cast de `published_at` ;
+- statut `draft` par défaut ;
+- date de publication nulle par défaut ;
+- suppression logique ;
+- exclusion des produits supprimés des requêtes normales ;
+- récupération avec `withTrashed()` ;
+- restauration d’un produit.
+
+Résultat obtenu :
+
+```text
+5 tests réussis
+```
+
+---
+
+## Ressource API Product
+
+Création de :
+
+```text
+app/Http/Resources/ProductResource.php
+```
+
+Données exposées :
+
+```text
+id
+title
+description
+price_cents
+condition
+status
+city
+published_at
+created_at
+updated_at
+```
+
+Données internes non exposées :
+
+```text
+user_id
+deleted_at
+```
+
+La ressource garantit une représentation JSON stable et contrôlée.
+
+---
+
+## Création d’un produit
+
+### Endpoint
+
+```http
+POST /api/products
+```
+
+Cette route est protégée par :
+
+```php
+auth:sanctum
+```
+
+### Validation
+
+Création de :
+
+```text
+app/Http/Requests/StoreProductRequest.php
+```
+
+Règles appliquées :
+
+```text
+title
+→ obligatoire
+→ chaîne
+→ maximum 150 caractères
+
+description
+→ obligatoire
+→ chaîne
+→ maximum 5 000 caractères
+
+price_cents
+→ obligatoire
+→ entier
+→ minimum 1
+
+condition
+→ obligatoire
+→ valeur de ProductCondition
+
+city
+→ obligatoire
+→ chaîne
+→ maximum 100 caractères
+```
+
+Les champs suivants ne sont pas acceptés depuis le client :
+
+```text
+user_id
+status
+published_at
+deleted_at
+```
+
+Le propriétaire est déterminé depuis la session :
+
+```php
+$request
+    ->user()
+    ->products()
+    ->create($request->validated());
+```
+
+Le produit est ensuite rechargé avec :
+
+```php
+$product->refresh();
+```
+
+Cette étape récupère notamment le statut `draft` appliqué par défaut par PostgreSQL avant la sérialisation de la réponse.
+
+### Comportements validés
+
+```text
+Utilisateur authentifié + données valides
+→ 201 Created
+
+Visiteur
+→ 401 Unauthorized
+
+Données invalides
+→ 422 Unprocessable Entity
+```
+
+### Protection du statut
+
+Même si le client envoie :
+
+```json
+{
+  "status": "published",
+  "published_at": "2026-11-09 13:00:00"
+}
+```
+
+le produit est créé avec :
+
+```text
+status = draft
+published_at = null
+```
+
+### Tests
+
+Création de :
+
+```text
+tests/Feature/CreateProductTest.php
+```
+
+Résultat obtenu :
+
+```text
+8 tests réussis
+30 assertions
+```
+
+---
+
+## Consultation d’un produit
+
+### Endpoint
+
+```http
+GET /api/products/{product}
+```
+
+Cette route est publique.
+
+### Règles de visibilité
+
+```text
+published
+→ visible
+```

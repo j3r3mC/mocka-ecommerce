@@ -1952,3 +1952,375 @@ Cette route est publique.
 published
 → visible
 ```
+
+---
+
+# Jour 6: Mise en place de l’infrastructure Media
+
+## Objectif de la session
+
+L’objectif était de préparer une infrastructure dédiée au stockage des images avant d’implémenter les images multiples des produits.
+
+L’architecture retenue devait respecter les principes suivants :
+
+```text
+Laravel est le seul service autorisé à écrire les fichiers
+Nginx expose les médias publiquement en lecture seule
+Les fichiers sont stockés dans un volume Docker persistant
+Les médias ne dépendent pas du cycle de vie des conteneurs
+Les images sont converties en WebP avant leur stockage définitif
+```
+
+La première utilisation concrète de cette infrastructure a été la migration des avatars de profil.
+
+---
+
+## Organisation des branches Git
+
+Le CRUD textuel Produits avait initialement été développé sur :
+
+```text
+feature/module-produits
+```
+
+Le CRUD étant terminé et entièrement testé, le chantier Media a été isolé sur une branche dédiée :
+
+```text
+feature/media-storage
+```
+
+Cette séparation permet de distinguer clairement :
+
+```text
+feature/module-produits
+→ logique métier textuelle des produits
+
+feature/media-storage
+→ infrastructure de stockage des images
+→ serveur média
+→ traitement WebP
+→ migration des avatars
+
+feature/product-images
+→ futures images multiples des produits
+```
+
+Après validation, la branche Media a été fusionnée dans :
+
+```text
+develop
+```
+
+État final de l’historique :
+
+```text
+9015390 feat(media): migration des avatars vers WebP
+cd5cd55 chore(deps): ajout du traitement d'images et correctifs de sécurité
+08b77a7 NGINX + container laravel-media
+4fa18bf feat(product): ajout du CRUD des produits
+```
+
+Une nouvelle branche a ensuite été créée pour la prochaine étape :
+
+```text
+feature/product-images
+```
+
+État Git en fin de journée :
+
+```text
+Branche actuelle : feature/product-images
+Branche distante : origin/feature/product-images
+Répertoire de travail : propre
+```
+
+---
+
+# Architecture Media retenue
+
+## Vue d’ensemble
+
+L’architecture mise en place est la suivante :
+
+```text
+Application cliente
+        ↓
+API Laravel
+        ↓
+validation et traitement des images
+        ↓
+volume Docker mocka_media
+        ↑
+Nginx Media en lecture seule
+        ↓
+http://localhost:8081
+```
+
+Responsabilités des services :
+
+```text
+mocka-app
+→ écrit, remplace et supprime les fichiers
+
+mocka-media
+→ lit et expose les fichiers
+
+mocka-postgres
+→ stocke uniquement les chemins relatifs
+
+mocka-redis
+→ cache et futures files de traitement
+```
+
+Les fichiers binaires ne sont pas enregistrés dans PostgreSQL.
+
+La base contient uniquement des chemins relatifs, par exemple :
+
+```text
+avatars/user-1/uuid.webp
+```
+
+---
+
+# Volume Docker persistant
+
+## Modification de Docker Compose
+
+Un volume Docker nommé a été ajouté :
+
+```yaml
+volumes:
+  postgres_data:
+  mocka_media:
+```
+
+Le service Laravel monte ce volume en écriture :
+
+```yaml
+services:
+  app:
+    volumes:
+      - ./apps/api:/var/www
+      - mocka_media:/var/www/storage/app/media
+```
+
+Le serveur Nginx monte le même volume en lecture seule :
+
+```yaml
+services:
+  media:
+    image: nginx:1.29-alpine
+    container_name: mocka-media
+    restart: unless-stopped
+
+    ports:
+      - "8081:80"
+
+    volumes:
+      - mocka_media:/usr/share/nginx/html:ro
+      - ./docker/media/default.conf:/etc/nginx/conf.d/default.conf:ro
+```
+
+Le nom effectif du volume généré par Docker Compose est :
+
+```text
+mocka-ecommerce_mocka_media
+```
+
+---
+
+## Docker Compose complet
+
+La configuration finale comprend quatre services :
+
+```yaml
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+
+    container_name: mocka-app
+    working_dir: /var/www
+
+    volumes:
+      - ./apps/api:/var/www
+      - mocka_media:/var/www/storage/app/media
+
+    depends_on:
+      - postgres
+      - redis
+
+    tty: true
+
+  postgres:
+    image: postgres:17
+    container_name: mocka-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: mocka
+      POSTGRES_USER: mocka
+      POSTGRES_PASSWORD: mocka
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:8-alpine
+    container_name: mocka-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+  media:
+    image: nginx:1.29-alpine
+    container_name: mocka-media
+    restart: unless-stopped
+
+    ports:
+      - "8081:80"
+
+    volumes:
+      - mocka_media:/usr/share/nginx/html:ro
+      - ./docker/media/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  postgres_data:
+  mocka_media:
+```
+
+---
+
+# Serveur Nginx Media
+
+## Configuration
+
+Création du fichier :
+
+```text
+docker/media/default.conf
+```
+
+Contenu :
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+
+    location / {
+        try_files $uri =404;
+
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Cache-Control "public, max-age=86400";
+    }
+
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+}
+```
+
+Le serveur Media remplit uniquement le rôle de serveur de fichiers statiques.
+
+Il ne contient pas PHP et n’exécute aucun code applicatif.
+
+---
+
+## Validation de la configuration
+
+La syntaxe Docker Compose a été vérifiée avec :
+
+```powershell
+docker compose config
+```
+
+Les services ont ensuite été démarrés :
+
+```powershell
+docker compose up -d --force-recreate app media
+```
+
+État obtenu :
+
+```text
+mocka-app        Up
+mocka-media      Up   0.0.0.0:8081->80/tcp
+mocka-postgres   Up   0.0.0.0:5432->5432/tcp
+mocka-redis      Up   0.0.0.0:6379->6379/tcp
+```
+
+La configuration Nginx a également été validée :
+
+```powershell
+docker exec mocka-media nginx -t
+```
+
+Résultat :
+
+```text
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+```
+
+---
+
+# Vérification du volume partagé
+
+## Écriture depuis Laravel
+
+Un fichier de contrôle a été créé depuis `mocka-app` :
+
+```bash
+mkdir -p storage/app/media/health
+echo media-ok > storage/app/media/health/test.txt
+```
+
+Le fichier était visible depuis le serveur média :
+
+```powershell
+docker exec mocka-media cat /usr/share/nginx/html/health/test.txt
+```
+
+Résultat :
+
+```text
+media-ok
+```
+
+---
+
+## Accès HTTP
+
+Le même fichier a été récupéré par HTTP :
+
+```powershell
+(Invoke-WebRequest http://localhost:8081/health/test.txt).Content
+```
+
+Résultat :
+
+```text
+media-ok
+```
+
+Cette vérification confirme le chemin complet :
+
+```text
+mocka-app
+→ volume mocka_media
+→ mocka-media
+→ port 8081
+→ navigateur ou client HTTP
+```
+
+---
+
+## Lecture

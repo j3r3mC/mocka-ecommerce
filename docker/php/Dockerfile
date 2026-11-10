@@ -16,8 +16,12 @@ RUN apt-get update \
     && docker-php-ext-install -j"$(nproc)" \
         pdo_pgsql \
         gd \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /tmp/pear
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 

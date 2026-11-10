@@ -47,6 +47,18 @@ return [
             'report' => false,
         ],
 
+        'media' => [
+            'driver' => 'local',
+            'root' => storage_path('app/media'),
+            'url' => rtrim(
+                env('MEDIA_URL', 'http://localhost:8081'),
+                '/'
+            ),
+            'visibility' => 'public',
+            'throw' => true,
+            'report' => true,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

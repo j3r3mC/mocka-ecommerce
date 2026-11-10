@@ -16,7 +16,7 @@ class UploadProfileAvatarTest extends TestCase
 
     public function test_authenticated_user_can_upload_avatar(): void
     {
-        Storage::fake('public');
+        Storage::fake('media');
 
         $user = $this->createUserWithProfile();
 
@@ -25,8 +25,8 @@ class UploadProfileAvatarTest extends TestCase
             ->postJson('/api/profile/avatar', [
                 'avatar' => UploadedFile::fake()->image(
                     'avatar.jpg',
-                    500,
-                    500
+                    800,
+                    600
                 ),
             ]);
 
@@ -36,22 +36,53 @@ class UploadProfileAvatarTest extends TestCase
 
         $user->profile->refresh();
 
-        $this->assertNotNull($user->profile->avatar_path);
+        $avatarPath = $user->profile->avatar_path;
 
-        Storage::disk('public')->assertExists(
-            $user->profile->avatar_path
+        $this->assertNotNull($avatarPath);
+
+        $this->assertStringStartsWith(
+            "avatars/user-{$user->id}/",
+            $avatarPath
         );
+
+        $this->assertStringEndsWith(
+            '.webp',
+            $avatarPath
+        );
+
+        Storage::disk('media')->assertExists($avatarPath);
+
+        $absolutePath = Storage::disk('media')->path($avatarPath);
+        $dimensions = getimagesize($absolutePath);
+
+        $this->assertNotFalse($dimensions);
+        $this->assertSame(400, $dimensions[0]);
+        $this->assertSame(400, $dimensions[1]);
+        $this->assertSame('image/webp', $dimensions['mime']);
+
+        $response
+            ->assertJsonPath(
+                'profile.avatar_path',
+                $avatarPath
+            )
+            ->assertJsonPath(
+                'profile.avatar_url',
+                Storage::disk('media')->url($avatarPath)
+            );
     }
 
     public function test_uploading_new_avatar_deletes_previous_avatar(): void
     {
-        Storage::fake('public');
+        Storage::fake('media');
 
         $user = $this->createUserWithProfile();
 
-        $oldPath = UploadedFile::fake()
-            ->image('old-avatar.jpg', 500, 500)
-            ->store('avatars', 'public');
+        $oldPath = "avatars/user-{$user->id}/old-avatar.webp";
+
+        Storage::disk('media')->put(
+            $oldPath,
+            'ancien-avatar'
+        );
 
         $user->profile->update([
             'avatar_path' => $oldPath,
@@ -61,9 +92,9 @@ class UploadProfileAvatarTest extends TestCase
             ->actingAs($user, 'web')
             ->postJson('/api/profile/avatar', [
                 'avatar' => UploadedFile::fake()->image(
-                    'new-avatar.jpg',
-                    500,
-                    500
+                    'new-avatar.png',
+                    600,
+                    900
                 ),
             ]);
 
@@ -71,16 +102,36 @@ class UploadProfileAvatarTest extends TestCase
 
         $user->profile->refresh();
 
-        Storage::disk('public')->assertMissing($oldPath);
+        $newPath = $user->profile->avatar_path;
 
-        Storage::disk('public')->assertExists(
-            $user->profile->avatar_path
+        $this->assertNotNull($newPath);
+        $this->assertNotSame($oldPath, $newPath);
+
+        $this->assertStringStartsWith(
+            "avatars/user-{$user->id}/",
+            $newPath
         );
+
+        $this->assertStringEndsWith(
+            '.webp',
+            $newPath
+        );
+
+        Storage::disk('media')->assertMissing($oldPath);
+        Storage::disk('media')->assertExists($newPath);
+
+        $absolutePath = Storage::disk('media')->path($newPath);
+        $dimensions = getimagesize($absolutePath);
+
+        $this->assertNotFalse($dimensions);
+        $this->assertSame(400, $dimensions[0]);
+        $this->assertSame(400, $dimensions[1]);
+        $this->assertSame('image/webp', $dimensions['mime']);
     }
 
     public function test_avatar_is_required(): void
     {
-        Storage::fake('public');
+        Storage::fake('media');
 
         $user = $this->createUserWithProfile();
 
@@ -93,11 +144,16 @@ class UploadProfileAvatarTest extends TestCase
             ->assertJsonValidationErrors(['avatar']);
 
         $this->assertNull($user->profile->avatar_path);
+
+        $this->assertSame(
+            [],
+            Storage::disk('media')->allFiles()
+        );
     }
 
     public function test_avatar_must_be_an_image(): void
     {
-        Storage::fake('public');
+        Storage::fake('media');
 
         $user = $this->createUserWithProfile();
 
@@ -116,11 +172,16 @@ class UploadProfileAvatarTest extends TestCase
             ->assertJsonValidationErrors(['avatar']);
 
         $this->assertNull($user->profile->avatar_path);
+
+        $this->assertSame(
+            [],
+            Storage::disk('media')->allFiles()
+        );
     }
 
     public function test_avatar_cannot_exceed_two_megabytes(): void
     {
-        Storage::fake('public');
+        Storage::fake('media');
 
         $user = $this->createUserWithProfile();
 
@@ -139,11 +200,16 @@ class UploadProfileAvatarTest extends TestCase
             ->assertJsonValidationErrors(['avatar']);
 
         $this->assertNull($user->profile->avatar_path);
+
+        $this->assertSame(
+            [],
+            Storage::disk('media')->allFiles()
+        );
     }
 
     public function test_user_without_profile_cannot_upload_avatar(): void
     {
-        Storage::fake('public');
+        Storage::fake('media');
 
         $user = $this->createUser();
 
@@ -163,12 +229,15 @@ class UploadProfileAvatarTest extends TestCase
                 'message' => 'Profil introuvable.',
             ]);
 
-        Storage::disk('public')->assertDirectoryEmpty('avatars');
+        $this->assertSame(
+            [],
+            Storage::disk('media')->allFiles()
+        );
     }
 
     public function test_guest_cannot_upload_avatar(): void
     {
-        Storage::fake('public');
+        Storage::fake('media');
 
         $response = $this->postJson('/api/profile/avatar', [
             'avatar' => UploadedFile::fake()->image(
@@ -181,7 +250,24 @@ class UploadProfileAvatarTest extends TestCase
         $response->assertUnauthorized();
 
         $this->assertGuest('web');
-        Storage::disk('public')->assertDirectoryEmpty('avatars');
+
+        $this->assertSame(
+            [],
+            Storage::disk('media')->allFiles()
+        );
+    }
+
+    public function test_media_disk_uses_media_server_url(): void
+    {
+        $mediaUrl = rtrim(
+            (string) config('filesystems.disks.media.url'),
+            '/'
+        );
+
+        $this->assertSame(
+            'http://localhost:8081',
+            $mediaUrl
+        );
     }
 
     private function createUserWithProfile(): User

@@ -6,6 +6,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @mixin \App\Models\Profile
@@ -21,6 +22,9 @@ class ProfileResource extends JsonResource
             'id' => $this->id,
             'username' => $this->username,
             'avatar_path' => $this->avatar_path,
+            'avatar_url' => $this->avatar_path !== null
+                ? Storage::disk('media')->url($this->avatar_path)
+                : null,
             'bio' => $this->bio,
             'city' => $this->city,
         ];

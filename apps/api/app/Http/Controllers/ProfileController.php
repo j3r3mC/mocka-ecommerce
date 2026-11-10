@@ -69,31 +69,44 @@ class ProfileController extends Controller
 
     public function uploadAvatar(
         UploadProfileAvatarRequest $request
-        ): JsonResponse {
-            $profile = $request->user()->profile;
+    ): JsonResponse {
+        $profile = $request->user()->profile;
 
-            if ($profile === null) {
-                return response()->json([
-                    'message' => 'Profil introuvable.',
-                ], 404);
-            }
-
-            $oldAvatarPath = $profile->avatar_path;
-
-            $newAvatarPath = $request
-                ->file('avatar')
-                ->store('avatars', 'public');
-
-            $profile->update([
-                'avatar_path' => $newAvatarPath,
-            ]);
-
-            if ($oldAvatarPath !== null) {
-                Storage::disk('public')->delete($oldAvatarPath);
-            }
-
+        if ($profile === null) {
             return response()->json([
-                'profile' => new ProfileResource($profile->refresh()),
-            ]);
+                'message' => 'Profil introuvable.',
+            ], 404);
         }
+
+        $oldAvatarPath = $profile->avatar_path;
+
+        $avatar = $request->image('avatar');
+
+        if ($avatar === null) {
+            return response()->json([
+                'message' => 'L’avatar est obligatoire.',
+            ], 422);
+        }
+
+        $newAvatarPath = $avatar
+            ->cover(400, 400)
+            ->toWebp()
+            ->quality(80)
+            ->storePublicly(
+                "avatars/user-{$request->user()->id}",
+                'media'
+            );
+
+        $profile->update([
+            'avatar_path' => $newAvatarPath,
+        ]);
+
+        if ($oldAvatarPath !== null) {
+            Storage::disk('media')->delete($oldAvatarPath);
+        }
+
+        return response()->json([
+            'profile' => new ProfileResource($profile->refresh()),
+        ]);
+    }
 }
